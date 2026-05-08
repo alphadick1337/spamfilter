@@ -40,7 +40,8 @@
 <script>
     let model;
     let metadata;
-    // Ändrat tillbaka till tfjs_model
+    
+    // Mappnamnet matchar nu din struktur på GitHub
     const MODEL_PATH = 'tfjs_model/'; 
 
     async function loadModel() {
@@ -57,7 +58,7 @@
             if (!metadataResponse.ok) throw new Error("Kunde inte ladda metadata.json");
             metadata = await metadataResponse.json();
 
-            // Laddar modellen med strict: false för att hantera lager-avvikelser
+            // strict: false är viktigt för att ignorera små lager-skillnader vid laddning
             model = await tf.loadLayersModel(modelUrl, { strict: false });
             
             statusEl.innerText = "Modell redo!";
@@ -75,10 +76,10 @@
     function tokenize(text) {
         const words = text.toLowerCase().replace(/[.,!?;:()]/g, '').split(/\s+/);
         const sequence = [];
-        const oovIndex = metadata.word_index[metadata.oov_token] || 1; 
+        const oovIndex = (metadata.word_index && metadata.word_index[metadata.oov_token]) || 1; 
 
         words.forEach(word => {
-            if (word) {
+            if (word && metadata.word_index) {
                 const index = metadata.word_index[word];
                 sequence.push(index !== undefined ? index : oovIndex);
             }
@@ -87,7 +88,7 @@
     }
 
     function padSequence(sequence) {
-        const maxLen = metadata.max_length;
+        const maxLen = metadata.max_length || 100;
         const padded = new Array(maxLen).fill(0);
         for (let i = 0; i < Math.min(sequence.length, maxLen); i++) {
             padded[i] = sequence[i];
@@ -112,14 +113,16 @@
             const data = await prediction.data(); 
             const maxIndex = data.indexOf(Math.max(...data));
             
-            // Hanterar labels oavsett format i metadata.json
-            const labelList = Object.values(metadata.labels);
-            const finalLabel = labelList[maxIndex] || "Okänd";
+            // Konverterar labels till lista oavsett om metadata är objekt eller array
+            const labelList = metadata.labels ? Object.values(metadata.labels) : ["Negativ", "Positiv"];
+            const rawLabel = labelList[maxIndex] || "Okänd";
+            
+            // Säkerställ att finalLabel är en sträng för att undvika toUpperCase-felet
+            const finalLabel = String(rawLabel); 
             
             const resultText = document.getElementById('predictionResult');
             resultText.innerText = `Bedömning: ${finalLabel.toUpperCase()}`;
             
-            // Färgkodning baserat på labelns innehåll
             if (finalLabel.toLowerCase().includes('pos')) resultText.style.color = 'green';
             else if (finalLabel.toLowerCase().includes('neg')) resultText.style.color = 'red';
             else resultText.style.color = '#333';
@@ -134,7 +137,7 @@
                 div.innerHTML = `
                     <div class="prob-label"><span>${label}</span><span>${percentage}%</span></div>
                     <div class="prob-bar">
-                        <div class="prob-fill" style="width: ${percentage}%; background-color: ${label.toLowerCase().includes('pos') ? '#4CAF50' : (label.toLowerCase().includes('neg') ? '#F44336' : '#9E9E9E')}"></div>
+                        <div class="prob-fill" style="width: ${percentage}%; background-color: ${String(label).toLowerCase().includes('pos') ? '#4CAF50' : '#F44336'}"></div>
                     </div>
                 `;
                 probContainer.appendChild(div);
