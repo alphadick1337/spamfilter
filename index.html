@@ -112,7 +112,7 @@
             console.log(`Försöker ladda modell från: ${modelUrl}`);
 
             // 1. Ladda modellen
-            model = await tf.loadLayersModel(modelUrl);
+          model = await tf.loadLayersModel(modelUrl, {strict: false});
             
             // 2. Ladda metadata
             const metadataResponse = await fetch(metadataUrl);
