@@ -2,92 +2,136 @@
 <html lang="sv">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Textanalys - Svenska Filmomdömen</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <style>
-        body { font-family: sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; flex-direction: column; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; flex-direction: column; }
         .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 500px; }
-        textarea { width: 100%; height: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 10px; }
-        button { width: 100%; padding: 12px; background-color: #4CAF50; color: white; border: none; border-radius: 6px; cursor: pointer; }
-        button:disabled { background-color: #ccc; }
-        .result-box { margin-top: 20px; padding: 15px; border-radius: 6px; background-color: #f9f9f9; display: none; }
-        .error-box { margin-top: 20px; padding: 15px; border-radius: 6px; background-color: #ffebee; color: #b71c1c; display: none; }
+        h1 { color: #333; text-align: center; margin-bottom: 1.5rem; font-size: 1.5rem; }
+        textarea { width: 100%; height: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; resize: none; box-sizing: border-box; font-size: 1rem; margin-bottom: 10px; }
+        button { width: 100%; padding: 12px; background-color: #4CAF50; color: white; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; transition: background 0.3s; }
+        button:hover { background-color: #45a049; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        .result-box { margin-top: 20px; padding: 15px; border-radius: 6px; background-color: #f9f9f9; border: 1px solid #eee; display: none; }
+        .error-box { margin-top: 20px; padding: 15px; border-radius: 6px; background-color: #ffebee; border: 1px solid #ffcdd2; color: #b71c1c; display: none; }
+        .highlight { font-weight: bold; font-size: 1.1rem; text-align: center; display: block; margin-bottom: 10px; }
+        #loadingStatus { text-align: center; margin-bottom: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h1>Analysera Omdöme</h1>
-    <div id="status" style="text-align: center; margin-bottom: 10px;">Laddar modell...</div>
-    <textarea id="inputText" placeholder="Skriv något här..."></textarea>
+    <div id="loadingStatus">Laddar modell...</div>
+    <textarea id="inputText" placeholder="Skriv ditt omdöme här (t.ex. 'Vilken fantastisk film')..."></textarea>
     <button id="analyzeBtn" onclick="predict()" disabled>Analysera Text</button>
+    
     <div id="errorBox" class="error-box"></div>
+    
     <div id="resultBox" class="result-box">
-        <strong id="predictionResult"></strong>
-        <div id="probabilities" style="margin-top: 10px;"></div>
+        <span id="predictionResult" class="highlight"></span>
+        <div id="probabilities"></div>
     </div>
 </div>
 
 <script>
-    let model, metadata;
-    // VIKTIGT: Denna måste matcha mappnamnet på GitHub exakt!
+    let model;
+    let metadata;
+    // Säkerställ att mappen på GitHub heter exakt tfjs_model
     const MODEL_PATH = 'tfjs_model/'; 
 
     async function loadModel() {
-        const statusEl = document.getElementById('status');
+        const statusEl = document.getElementById('loadingStatus');
         const btn = document.getElementById('analyzeBtn');
-        try {
-            // Vi lägger till en unik parameter för att tvinga webbläsaren att hämta de nya filerna
-            const cacheBuster = "?v=" + new Date().getTime();
-            
-            const metaRes = await fetch(`${MODEL_PATH}metadata.json${cacheBuster}`);
-            if (!metaRes.ok) throw new Error("Hittade inte metadata.json i tfjs_model/");
-            metadata = await metaRes.json();
+        const errBox = document.getElementById('errorBox');
 
-            model = await tf.loadLayersModel(`${MODEL_PATH}model.json${cacheBuster}`, { strict: false });
+        try {
+            // Cache-buster för att tvinga webbläsaren att hämta nyaste filerna
+            const cb = "?v=" + new Date().getTime();
+            
+            const metadataResponse = await fetch(`${MODEL_PATH}metadata.json${cb}`);
+            if (!metadataResponse.ok) throw new Error("Kunde inte hitta metadata.json i mappen tfjs_model/");
+            metadata = await metadataResponse.json();
+
+            model = await tf.loadLayersModel(`${MODEL_PATH}model.json${cb}`, { strict: false });
             
             statusEl.innerText = "Modell redo!";
             statusEl.style.color = "green";
             btn.disabled = false;
-        } catch (err) {
-            document.getElementById('errorBox').style.display = 'block';
-            document.getElementById('errorBox').innerText = "Laddningsfel: " + err.message;
-            statusEl.innerText = "Ett fel uppstod.";
+        } catch (error) {
+            statusEl.innerText = "Laddningsfel";
+            statusEl.style.color = "red";
+            errBox.style.display = 'block';
+            errBox.innerText = "Fel: " + error.message;
         }
     }
 
     loadModel();
 
+    function tokenize(text) {
+        const words = text.toLowerCase().replace(/[.,!?;:()]/g, '').split(/\s+/);
+        const sequence = [];
+        const oovIndex = (metadata.word_index && metadata.word_index[metadata.oov_token]) || 1; 
+
+        words.forEach(word => {
+            if (word && metadata.word_index) {
+                const index = metadata.word_index[word];
+                sequence.push(index !== undefined ? index : oovIndex);
+            }
+        });
+        return sequence;
+    }
+
+    function padSequence(sequence) {
+        const maxLen = metadata.max_length || 100;
+        const padded = new Array(maxLen).fill(0);
+        for (let i = 0; i < Math.min(sequence.length, maxLen); i++) {
+            padded[i] = sequence[i];
+        }
+        return padded;
+    }
+
     async function predict() {
         const text = document.getElementById('inputText').value;
+        const resultBox = document.getElementById('resultBox');
+        const errorBox = document.getElementById('errorBox');
+        const resultText = document.getElementById('predictionResult');
+        
+        errorBox.style.display = 'none';
         if (!text.trim()) return;
 
         try {
-            // Tokenisering
-            const words = text.toLowerCase().replace(/[.,!?;:]/g, '').split(/\s+/);
-            const seq = words.map(word => metadata.word_index[word] || metadata.word_index[metadata.oov_token] || 1);
+            const sequence = tokenize(text);
+            const padded = padSequence(sequence);
+            const inputTensor = tf.tensor2d([padded], [1, metadata.max_length]);
+
+            const prediction = model.predict(inputTensor);
+            const data = await prediction.data(); 
+            const maxIndex = data.indexOf(Math.max(...data));
             
-            // Padding
-            const padded = new Array(metadata.max_length).fill(0);
-            for (let i = 0; i < Math.min(seq.length, metadata.max_length); i++) {
-                padded[i] = seq[i];
-            }
-
-            const input = tf.tensor2d([padded], [1, metadata.max_length]);
-            const prediction = model.predict(input);
-            const probs = await prediction.data();
+            // FIX: Hämtar labels säkert oavsett om det är en array eller ett objekt
+            const labelList = Object.values(metadata.labels);
+            const rawLabel = labelList[maxIndex];
             
-            const maxIdx = probs.indexOf(Math.max(...probs));
-            const labels = Object.values(metadata.labels); // Fixar objekt/lista-problemet
-            const resultLabel = String(labels[maxIdx] || "Okänd");
+            // FIX: Tvingar fram sträng-format innan toUpperCase anropas
+            const finalLabel = String(rawLabel || "Okänd");
+            
+            resultText.innerText = `Bedömning: ${finalLabel.toUpperCase()}`;
+            
+            // Färgkodning baserat på omdöme
+            if (finalLabel.toLowerCase().includes('pos')) resultText.style.color = 'green';
+            else if (finalLabel.toLowerCase().includes('neg')) resultText.style.color = 'red';
+            else resultText.style.color = '#333';
 
-            document.getElementById('predictionResult').innerText = "Bedömning: " + resultLabel.toUpperCase();
-            document.getElementById('resultBox').style.display = 'block';
-
-            input.dispose();
+            resultBox.style.display = 'block';
+            
+            // Städa upp minne
+            inputTensor.dispose();
             prediction.dispose();
         } catch (err) {
-            alert("Analysfel: " + err.message);
+            errorBox.style.display = 'block';
+            errorBox.innerText = "Analysfel: " + err.message;
         }
     }
 </script>
