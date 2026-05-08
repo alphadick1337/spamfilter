@@ -21,56 +21,23 @@
         .prob-fill { height: 100%; background-color: #2196F3; width: 0%; transition: width 0.5s ease; }
         .highlight { font-weight: bold; font-size: 1.1rem; text-align: center; display: block; margin-bottom: 10px; }
 
-        /* Footer för modellinfo */
-        .model-footer {
-            width: 100%;
-            max-width: 500px;
-            margin: 12px auto 24px auto;
-            padding: 14px 18px;
-            background: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.06);
-            border: 1px solid #eee;
-            color: #333;
-            font-size: 0.92rem;
-            line-height: 1.35;
-        }
-        .model-footer h2 {
-            margin: 0 0 10px 0;
-            font-size: 1.05rem;
-            color: #222;
-        }
-        .model-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 6px;
-        }
-        .kv {
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            border-bottom: 1px dashed #eee;
-            padding-bottom: 6px;
-        }
+        .model-footer { width: 100%; max-width: 500px; margin: 12px auto 24px auto; padding: 14px 18px; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.06); border: 1px solid #eee; color: #333; font-size: 0.92rem; line-height: 1.35; }
+        .model-footer h2 { margin: 0 0 10px 0; font-size: 1.05rem; color: #222; }
+        .model-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+        .kv { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed #eee; padding-bottom: 6px; }
         .kv:last-child { border-bottom: none; padding-bottom: 0; }
         .k { color: #555; }
         .v { color: #111; font-weight: 600; text-align: right; word-break: break-word; }
-        .note { margin-top: 10px; color: #666; font-size: 0.85rem; }
-        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-weight: 600; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h1>Analysera Omdöme</h1>
-    
     <div id="loadingStatus" style="text-align: center; color: #666; margin-bottom: 10px;">Laddar modell...</div>
-
     <textarea id="inputText" placeholder="Skriv ditt omdöme här (t.ex. 'Vilken fantastisk film')..."></textarea>
     <button id="analyzeBtn" onclick="predict()" disabled>Analysera Text</button>
-
     <div id="errorBox" class="error-box"></div>
-
     <div id="resultBox" class="result-box">
         <span id="predictionResult" class="highlight"></span>
         <hr style="border: 0; border-top: 1px solid #ddd; margin: 10px 0;">
@@ -81,16 +48,12 @@
 <div class="model-footer" id="modelFooter" style="display:none;">
     <h2>Modellinformation</h2>
     <div class="model-grid" id="modelInfoGrid"></div>
-    <div class="note" id="modelInfoNote"></div>
 </div>
 
 <script>
     let model;
     let metadata;
-
-    // --- INSTÄLLNINGAR ---
     const MODEL_PATH = 'tfjs_model/'; 
-    // ---------------------
 
     async function loadModel() {
         const statusEl = document.getElementById('loadingStatus');
@@ -102,33 +65,23 @@
             const modelUrl = `${MODEL_PATH}model.json?t=${timestamp}`;
             const metadataUrl = `${MODEL_PATH}metadata.json?t=${timestamp}`;
 
-            console.log(`Försöker ladda modell från: ${modelUrl}`);
-
             const metadataResponse = await fetch(metadataUrl);
-            if (!metadataResponse.ok) {
-                throw new Error(`Kunde inte hitta metadata.json på adressen: ${metadataUrl} (Status: ${metadataResponse.status})`);
-            }
+            if (!metadataResponse.ok) throw new Error("Kunde inte ladda metadata.json");
             metadata = await metadataResponse.json();
 
-            // Fix: strict: false för att hantera InputLayer-felet
+            // Laddar modellen med strict: false för att undvika problem med lager-definitioner
             model = await tf.loadLayersModel(modelUrl, { strict: false });
             
             statusEl.innerText = "Modell redo!";
             statusEl.style.color = "green";
             btn.disabled = false;
 
-            let modelJsonInfo = null;
-            try {
-                const mj = await fetch(modelUrl);
-                if (mj.ok) modelJsonInfo = await mj.json();
-            } catch (e) {}
-            renderModelInfo(modelJsonInfo);
-
+            renderModelInfo();
         } catch (error) {
             console.error(error);
             statusEl.style.display = 'none';
             errBox.style.display = 'block';
-            errBox.innerHTML = `<strong>Fel vid laddning:</strong><br>${error.message}`;
+            errBox.innerText = "Fel vid laddning: " + error.message;
         }
     }
 
@@ -150,16 +103,11 @@
 
     function padSequence(sequence) {
         const maxLen = metadata.max_length;
-        if (sequence.length > maxLen) {
-            return sequence.slice(0, maxLen);
-        } else {
-            const padCount = maxLen - sequence.length;
-            const padded = [...sequence];
-            for (let i = 0; i < padCount; i++) {
-                padded.push(0);
-            }
-            return padded;
+        const padded = new Array(maxLen).fill(0);
+        for (let i = 0; i < Math.min(sequence.length, maxLen); i++) {
+            padded[i] = sequence[i];
         }
+        return padded;
     }
 
     async function predict() {
@@ -168,11 +116,7 @@
         const errorBox = document.getElementById('errorBox');
         
         errorBox.style.display = 'none';
-        
-        if (!text.trim()) {
-            alert("Skriv in text först.");
-            return;
-        }
+        if (!text.trim()) return alert("Skriv in text först.");
 
         try {
             const sequence = tokenize(text);
@@ -183,31 +127,26 @@
             const data = await prediction.data(); 
             
             const maxIndex = data.indexOf(Math.max(...data));
-            const labels = metadata.labels; 
+            
+            // Robust hantering av labels (fungerar som både lista och objekt)
+            const labelKeys = Object.values(metadata.labels);
+            const finalLabel = labelKeys[maxIndex];
             
             const resultText = document.getElementById('predictionResult');
-            // Fix: Hanterar både objekt och arrayer för labels
-            const finalLabel = Array.isArray(labels) ? labels[maxIndex] : labels[String(maxIndex)];
-            
             resultText.innerText = `Bedömning: ${finalLabel.toUpperCase()}`;
-            
-            if(finalLabel === 'positiv') resultText.style.color = 'green';
-            else if(finalLabel === 'negativ') resultText.style.color = 'red';
-            else resultText.style.color = '#888';
+            resultText.style.color = (finalLabel === 'positiv') ? 'green' : (finalLabel === 'negativ' ? 'red' : '#888');
 
             const probContainer = document.getElementById('probabilities');
             probContainer.innerHTML = ''; 
             
-            const labelList = Array.isArray(labels) ? labels : Object.values(labels);
-            
-            labelList.forEach((label, idx) => {
+            labelKeys.forEach((label, idx) => {
                 const percentage = (data[idx] * 100).toFixed(1);
                 const div = document.createElement('div');
                 div.className = 'prob-bar-container';
                 div.innerHTML = `
                     <div class="prob-label"><span>${label}</span><span>${percentage}%</span></div>
                     <div class="prob-bar">
-                        <div class="prob-fill" style="width: ${percentage}%; background-color: ${getColor(label)}"></div>
+                        <div class="prob-fill" style="width: ${percentage}%; background-color: ${label === 'positiv' ? '#4CAF50' : (label === 'negativ' ? '#F44336' : '#9E9E9E')}"></div>
                     </div>
                 `;
                 probContainer.appendChild(div);
@@ -216,52 +155,24 @@
             resultBox.style.display = 'block';
             inputTensor.dispose();
             prediction.dispose();
-
         } catch (err) {
-            console.error(err);
             errorBox.style.display = 'block';
-            errorBox.innerText = "Ett fel uppstod vid analysen: " + err.message;
+            errorBox.innerText = "Analysfel: " + err.message;
         }
     }
 
-    function getColor(label) {
-        if(label === 'positiv') return '#4CAF50';
-        if(label === 'negativ') return '#F44336';
-        return '#9E9E9E'; 
-    }
-
-    function renderModelInfo(modelJsonInfo) {
+    function renderModelInfo() {
         const footer = document.getElementById('modelFooter');
         const grid = document.getElementById('modelInfoGrid');
-
-        const safe = (v) => (v === undefined || v === null || v === "") ? "—" : String(v);
-
-        const vocabSize = (model && model.layers && model.layers[0] && model.layers[0].getConfig && model.layers[0].getConfig().inputDim) || 1000;
-
-        const maxLen = metadata?.max_length;
-        const labelStr = metadata?.labels ? (Array.isArray(metadata.labels) ? metadata.labels.join(", ") : Object.values(metadata.labels).join(", ")) : "—";
-        const paramCount = model?.countParams ? model.countParams() : "—";
-
-        grid.innerHTML = "";
-        const rows = [
-            ["Modelltyp", "TF.js LayersModel"],
-            ["Input-längd", safe(maxLen)],
-            ["Vokabulär", safe(vocabSize)],
-            ["Labels", safe(labelStr)],
-            ["Parametrar", safe(paramCount)],
-            ["Sökväg", MODEL_PATH]
-        ];
-
-        rows.forEach(([k, v]) => {
-            const div = document.createElement("div");
-            div.className = "kv";
-            div.innerHTML = `<div class="k">${k}</div><div class="v">${v}</div>`;
-            grid.appendChild(div);
-        });
-
+        const labelText = Object.values(metadata.labels).join(", ");
+        
+        grid.innerHTML = `
+            <div class="kv"><div class="k">Input-längd</div><div class="v">${metadata.max_length}</div></div>
+            <div class="kv"><div class="k">Labels</div><div class="v">${labelText}</div></div>
+            <div class="kv"><div class="k">Vokabulär</div><div class="v">${Object.keys(metadata.word_index).length} ord</div></div>
+        `;
         footer.style.display = "block";
     }
 </script>
-
 </body>
 </html>
